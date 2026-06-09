@@ -1,8 +1,13 @@
 import { configureStore } from "@reduxjs/toolkit";
+import adminUsersReducer from "@/features/admin/adminUsersSlice";
+import authReducer from "@/features/auth/authSlice";
+import productsReducer from "@/features/products/productsSlice";
 
 export const store = configureStore({
   reducer: {
-    // thêm các slice reducer ở đây
+    auth: authReducer,
+    adminUsers: adminUsersReducer,
+    products: productsReducer,
   },
 });
 
