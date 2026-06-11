@@ -44,7 +44,7 @@ export const authLogin = createAsyncThunk<
         return rejectWithValue(error.response?.data ?? {});
       }
 
-      return rejectWithValue({ message: "Dang nhap that bai" });
+      return rejectWithValue({ message: "Đăng nhập thất bại" });
     }
   },
 );
@@ -63,7 +63,7 @@ export const getCurrentUser = createAsyncThunk<
       return rejectWithValue(error.response?.data ?? {});
     }
 
-    return rejectWithValue({ message: "Khong lay duoc thong tin tai khoan" });
+    return rejectWithValue({ message: "Không lấy được thông tin tài khoản" });
   }
 });
 

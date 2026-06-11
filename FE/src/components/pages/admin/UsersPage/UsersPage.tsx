@@ -227,7 +227,7 @@ export default function UsersPage() {
           </h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1040px] text-sm">
             <thead>
               <tr className="text-xs text-gray-500 uppercase bg-gray-50">
                 <th className="px-6 py-3 text-left">ID</th>
@@ -281,16 +281,16 @@ export default function UsersPage() {
                     <td className="px-6 py-4 text-gray-600">
                       {u.phone || "—"}
                     </td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${ROLE_COLORS[u.role]}`}
+                        className={`inline-flex items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium ${ROLE_COLORS[u.role]}`}
                       >
                         {ROLE_LABELS[u.role]}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[u.status]}`}
+                        className={`inline-flex items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[u.status]}`}
                       >
                         {STATUS_LABELS[u.status]}
                       </span>
@@ -298,7 +298,7 @@ export default function UsersPage() {
                     <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
                       {formatDate(u.createdAt)}
                     </td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => openView(u)}

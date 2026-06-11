@@ -1,358 +1,364 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Eye, Search } from "lucide-react";
+import { useAppDispatch, useAppSelector } from "@/hooks/hooks";
+import usePagination from "@/hooks/usePagination";
+import { getOrders } from "@/features/orders/ordersSlice";
+import {
+  type Order,
+  type OrderStatus,
+} from "@/services/orders/ordersService";
+import OrderDetailPage from "../OrderDetailPage/OrderDetailPage";
 
-type OrderStatus =
-  | "pending"
-  | "processing"
-  | "shipped"
-  | "delivered"
-  | "cancelled";
-
-type Order = {
-  id: string;
-  customer: string;
-  email: string;
-  product: string;
-  total: number;
-  status: OrderStatus;
-  date: string;
-  items: number;
-};
-
-type ModalMode = "view" | "edit" | "delete" | null;
+const PAGE_SIZE = 10;
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "Chờ xử lý",
-  processing: "Đang xử lý",
-  shipped: "Đang giao",
+  shipping: "Đang giao",
   delivered: "Đã giao",
   cancelled: "Đã hủy",
 };
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
-  pending: "bg-yellow-100 text-yellow-700",
-  processing: "bg-blue-100 text-blue-700",
-  shipped: "bg-indigo-100 text-indigo-700",
-  delivered: "bg-green-100 text-green-700",
-  cancelled: "bg-red-100 text-red-700",
+  pending: "bg-amber-50 text-amber-700 ring-amber-100",
+  shipping: "bg-indigo-50 text-indigo-700 ring-indigo-100",
+  delivered: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  cancelled: "bg-red-50 text-red-700 ring-red-100",
 };
 
-const PAGE_SIZE = 8;
+function formatPrice(value: number, currency = "USD") {
+  if (!Number.isFinite(value)) return `0 ${currency}`;
+  return value.toLocaleString("vi-VN") + " " + currency;
+}
 
-const initialOrders: Order[] = [
-  {
-    id: "ORD-0001",
-    customer: "Nguyễn Văn A",
-    email: "nva@gmail.com",
-    product: "iPhone 15 Pro Max",
-    total: 32000000,
-    status: "delivered",
-    date: "31/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0002",
-    customer: "Trần Thị B",
-    email: "ttb@gmail.com",
-    product: "Laptop Dell XPS 13",
-    total: 25000000,
-    status: "shipped",
-    date: "31/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0003",
-    customer: "Lê Văn C",
-    email: "lvc@gmail.com",
-    product: "AirPods Pro 2 x2",
-    total: 12400000,
-    status: "processing",
-    date: "30/05/2026",
-    items: 2,
-  },
-  {
-    id: "ORD-0004",
-    customer: "Phạm Thị D",
-    email: "ptd@gmail.com",
-    product: "iPad Air M2",
-    total: 16000000,
-    status: "pending",
-    date: "30/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0005",
-    customer: "Hoàng Văn E",
-    email: "hve@gmail.com",
-    product: "Samsung Galaxy S24",
-    total: 22000000,
-    status: "cancelled",
-    date: "29/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0006",
-    customer: "Đỗ Thị F",
-    email: "dtf@gmail.com",
-    product: "Sony WH-1000XM5",
-    total: 8500000,
-    status: "delivered",
-    date: "29/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0007",
-    customer: "Vũ Văn G",
-    email: "vvg@gmail.com",
-    product: "MacBook Pro M4",
-    total: 45000000,
-    status: "shipped",
-    date: "28/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0008",
-    customer: "Bùi Thị H",
-    email: "bth@gmail.com",
-    product: "Logitech MX Master 3 x3",
-    total: 8400000,
-    status: "processing",
-    date: "28/05/2026",
-    items: 3,
-  },
-  {
-    id: "ORD-0009",
-    customer: "Ngô Văn I",
-    email: "nvi@gmail.com",
-    product: "ASUS ROG Swift",
-    total: 12000000,
-    status: "pending",
-    date: "27/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0010",
-    customer: "Lý Thị K",
-    email: "ltk@gmail.com",
-    product: "Xiaomi 14 Ultra",
-    total: 21000000,
-    status: "delivered",
-    date: "27/05/2026",
-    items: 1,
-  },
-  {
-    id: "ORD-0011",
-    customer: "Trịnh Văn L",
-    email: "tvl@gmail.com",
-    product: "iPhone 15 Pro Max x2",
-    total: 64000000,
-    status: "delivered",
-    date: "26/05/2026",
-    items: 2,
-  },
-  {
-    id: "ORD-0012",
-    customer: "Phan Thị M",
-    email: "ptm@gmail.com",
-    product: "Google Pixel 9",
-    total: 19000000,
-    status: "shipped",
-    date: "26/05/2026",
-    items: 1,
-  },
-];
+function formatDate(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("vi-VN");
+}
 
-function formatPrice(n: number) {
-  return "₫" + n.toLocaleString("vi-VN");
+function formatPaymentMethod(value?: string) {
+  const method = value?.trim();
+  if (!method) return "-";
+  return method.toUpperCase();
+}
+
+function getOrderId(order: Order) {
+  return order._id ?? order.id ?? "";
+}
+
+function getOrderCode(order: Order) {
+  return order.orderCode ?? order.code ?? order.orderNumber ?? getOrderId(order);
+}
+
+function getCustomerName(order: Order) {
+  return (
+    [
+      order.customerName,
+      order.userName,
+      order.customer?.name,
+      order.user?.name,
+      getCustomerEmail(order).split("@")[0],
+    ].find(Boolean) || "Khách hàng"
+  );
+}
+
+function getCustomerEmail(order: Order) {
+  return (
+    order.customerEmail ??
+    order.userEmail ??
+    order.customer?.email ??
+    order.user?.email ??
+    order.email ??
+    ""
+  );
+}
+
+function getCustomerPhone(order: Order) {
+  return (
+    order.customerPhone ??
+    order.userPhone ??
+    order.customer?.phone ??
+    order.user?.phone ??
+    order.phone ??
+    ""
+  );
+}
+
+function getPaymentMethod(order: Order) {
+  return order.paymentMethod ?? order.payment?.method ?? order.payment?.provider ?? "";
+}
+
+function getOrderItems(order: Order) {
+  return order.items ?? order.products ?? [];
+}
+
+function getOrderTotal(order: Order) {
+  const explicitTotal = toNumber(getOrderTotalValue(order));
+
+  if (explicitTotal !== null) return explicitTotal;
+
+  return getOrderItems(order).reduce(
+    (sum, item) => sum + getItemPrice(item) * getItemQuantity(item),
+    0,
+  );
+}
+
+function getOrderTotalCurrency(order: Order) {
+  return getCurrency(getOrderTotalValue(order)) ?? "USD";
+}
+
+function getOrderTotalValue(order: Order) {
+  return (
+    order.totalAmount ??
+    order.total ??
+    order.totalPrice ??
+    order.finalTotal ??
+    order.grandTotal ??
+    order.summary?.total ??
+    order.summary?.grandTotal ??
+    order.summary?.subtotal ??
+    order.pricing?.total ??
+    order.pricing?.grandTotal ??
+    order.pricing?.subtotal ??
+    order.subtotal
+  );
+}
+
+function getItemPrice(item: ReturnType<typeof getOrderItems>[number]) {
+  return toNumber(item.price ?? item.unitPrice ?? item.amount ?? item.total ?? item.totalPrice) ?? 0;
+}
+
+function getItemQuantity(item: ReturnType<typeof getOrderItems>[number]) {
+  return toNumber(item.quantity, 1) ?? 1;
+}
+
+function toNumber(value: unknown, fallback: number | null = null) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.replace(/[^\d.-]/g, "");
+    const numberValue = Number(normalized);
+    return Number.isFinite(numberValue) ? numberValue : fallback;
+  }
+
+  if (value && typeof value === "object" && "amount" in value) {
+    return toNumber(value.amount, fallback);
+  }
+
+  return fallback;
+}
+
+function getCurrency(value: unknown) {
+  if (value && typeof value === "object" && "currency" in value) {
+    return typeof value.currency === "string" ? value.currency : undefined;
+  }
+  return undefined;
+}
+
+function getOrderStatus(order: Order): OrderStatus {
+  if (order.status === "processing") return "pending";
+  if (order.status === "shipped") return "shipping";
+  return order.status ?? "pending";
 }
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const dispatch = useAppDispatch();
+  const { orders, loading, error } = useAppSelector((state) => state.orders);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
-  const [page, setPage] = useState(1);
-  const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [selected, setSelected] = useState<Order | null>(null);
-  const [editStatus, setEditStatus] = useState<OrderStatus>("pending");
+
+  useEffect(() => {
+    dispatch(getOrders());
+  }, [dispatch]);
 
   const filtered = useMemo(() => {
-    return orders.filter((o) => {
+    const q = search.trim().toLowerCase();
+    return orders.filter((order) => {
+      const matchStatus =
+        statusFilter === "all" || getOrderStatus(order) === statusFilter;
       const matchSearch =
-        o.id.toLowerCase().includes(search.toLowerCase()) ||
-        o.customer.toLowerCase().includes(search.toLowerCase()) ||
-        o.email.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === "all" || o.status === statusFilter;
-      return matchSearch && matchStatus;
+        !q ||
+        getOrderCode(order).toLowerCase().includes(q) ||
+        getCustomerName(order).toLowerCase().includes(q) ||
+        getCustomerEmail(order).toLowerCase().includes(q) ||
+        getOrderItems(order).some((item) =>
+          (item.title ?? item.name ?? "").toLowerCase().includes(q),
+        );
+
+      return matchStatus && matchSearch;
     });
   }, [orders, search, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const {
+    page,
+    totalPages,
+    currentItems: paginated,
+    pageNumbers,
+    handlePageChange,
+  } = usePagination(filtered, PAGE_SIZE);
 
-  function openView(o: Order) {
-    setSelected(o);
-    setModalMode("view");
-  }
-  function openEdit(o: Order) {
-    setSelected(o);
-    setEditStatus(o.status);
-    setModalMode("edit");
-  }
-  function openDelete(o: Order) {
-    setSelected(o);
-    setModalMode("delete");
-  }
-  function closeModal() {
-    setModalMode(null);
-    setSelected(null);
-  }
-
-  function handleSaveStatus() {
-    if (selected)
-      setOrders(
-        orders.map((o) =>
-          o.id === selected.id ? { ...o, status: editStatus } : o,
-        ),
-      );
-    closeModal();
-  }
-
-  function handleDelete() {
-    if (selected) setOrders(orders.filter((o) => o.id !== selected.id));
-    closeModal();
+  if (selected) {
+    return <OrderDetailPage order={selected} onBack={() => setSelected(null)} />;
   }
 
   return (
-    <div className="space-y-6">
-      {/* Toolbar */}
-      <div className="flex flex-wrap gap-3 items-start justify-between">
+    <div className="space-y-6 animate-page-in">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-3">
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-              🔍
-            </span>
+            <Search
+              size={17}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
             <input
-              className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              placeholder="Tìm mã đơn, khách hàng, email..."
+              className="w-72 rounded-lg border border-gray-200 py-2 pl-9 pr-4 text-sm outline-none transition focus:ring-2 focus:ring-indigo-300"
+              placeholder="Tìm mã đơn, khách hàng, sản phẩm..."
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
+              onChange={(event) => {
+                setSearch(event.target.value);
+                handlePageChange(1);
               }}
             />
           </div>
+
           <select
-            className="border border-gray-200 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-indigo-300"
             value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value as "all" | OrderStatus);
-              setPage(1);
+            onChange={(event) => {
+              setStatusFilter(event.target.value as "all" | OrderStatus);
+              handlePageChange(1);
             }}
           >
             <option value="all">Tất cả trạng thái</option>
-            {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABELS[s]}
+            {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((status) => (
+              <option key={status} value={status}>
+                {STATUS_LABELS[status]}
               </option>
             ))}
           </select>
         </div>
-        {/* Status summary badges */}
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-            <span
-              key={s}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[s]}`}
-            >
-              {STATUS_LABELS[s]}: {orders.filter((o) => o.status === s).length}
-            </span>
-          ))}
-        </div>
+
+        <span className="text-sm text-gray-500">
+          Tổng: <strong>{filtered.length}</strong> đơn hàng
+        </span>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
+      {error && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-5">
+        {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((status) => (
+          <div
+            key={status}
+            className={`rounded-2xl p-4 ring-1 ${STATUS_COLORS[status]}`}
+          >
+            <p className="text-xs font-semibold uppercase">{STATUS_LABELS[status]}</p>
+            <p className="mt-1 text-2xl font-bold">
+              {orders.filter((order) => getOrderStatus(order) === status).length}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm animate-card-in delay-100">
+        <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="text-base font-semibold text-gray-800">
             Danh sách đơn hàng
-            <span className="ml-2 text-sm font-normal text-gray-400">
-              ({filtered.length})
-            </span>
           </h2>
         </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-[1180px] w-full table-fixed text-sm">
             <thead>
-              <tr className="text-xs text-gray-500 uppercase bg-gray-50">
-                <th className="px-6 py-3 text-left">Mã đơn</th>
-                <th className="px-6 py-3 text-left">Khách hàng</th>
-                <th className="px-6 py-3 text-left">Sản phẩm</th>
-                <th className="px-6 py-3 text-center">SL</th>
-                <th className="px-6 py-3 text-right">Tổng tiền</th>
-                <th className="px-6 py-3 text-center">Trạng thái</th>
-                <th className="px-6 py-3 text-left">Ngày đặt</th>
-                <th className="px-6 py-3 text-center">Thao tác</th>
+              <tr className="bg-gray-50 text-xs uppercase text-gray-500">
+                <th className="w-[150px] whitespace-nowrap px-4 py-3 text-left">Mã đơn</th>
+                <th className="w-[210px] whitespace-nowrap px-4 py-3 text-left">Khách hàng</th>
+                <th className="w-[270px] whitespace-nowrap px-4 py-3 text-left">Sản phẩm</th>
+                <th className="w-[70px] whitespace-nowrap px-4 py-3 text-center">SL</th>
+                <th className="w-[120px] whitespace-nowrap px-4 py-3 text-right">Tổng tiền</th>
+                <th className="w-[150px] whitespace-nowrap px-4 py-3 text-center">Thanh toán</th>
+                <th className="w-[130px] whitespace-nowrap px-4 py-3 text-center">Trạng thái</th>
+                <th className="w-[120px] whitespace-nowrap px-4 py-3 text-center">Ngày đặt</th>
+                <th className="w-[110px] whitespace-nowrap px-4 py-3 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {paginated.length === 0 ? (
+              {loading ? (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="px-6 py-12 text-center text-gray-400"
-                  >
-                    Không tìm thấy đơn hàng nào
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                      Đang tải...
+                    </div>
+                  </td>
+                </tr>
+              ) : paginated.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                    Chưa có đơn hàng nào
                   </td>
                 </tr>
               ) : (
-                paginated.map((o) => (
-                  <tr key={o.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-mono font-medium text-indigo-600 text-xs">
-                      #{o.id}
+                paginated.map((order) => (
+                  <tr key={getOrderId(order)} className="transition-colors hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-indigo-600">
+                      <span className="block truncate">#{getOrderCode(order)}</span>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-gray-800">{o.customer}</p>
-                      <p className="text-xs text-gray-400">{o.email}</p>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <p className="truncate font-semibold text-gray-900">
+                        {getCustomerName(order)}
+                      </p>
+                      <p className="truncate text-xs text-gray-400">
+                        {getCustomerEmail(order) || getCustomerPhone(order) || "-"}
+                      </p>
                     </td>
-                    <td className="px-6 py-4 text-gray-600 max-w-[180px] truncate">
-                      {o.product}
-                    </td>
-                    <td className="px-6 py-4 text-center text-gray-600">
-                      {o.items}
-                    </td>
-                    <td className="px-6 py-4 text-right font-medium text-gray-800">
-                      {formatPrice(o.total)}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[o.status]}`}
-                      >
-                        {STATUS_LABELS[o.status]}
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                      <span className="block truncate">
+                        {getOrderItems(order)
+                          .map((item) => item.title ?? item.name)
+                          .filter(Boolean)
+                          .join(", ") || "-"}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
-                      {o.date}
+                    <td className="whitespace-nowrap px-4 py-3 text-center text-gray-600">
+                      {getOrderItems(order).reduce(
+                        (sum, item) => sum + getItemQuantity(item),
+                        0,
+                      )}
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-gray-900">
+                      {formatPrice(getOrderTotal(order), getOrderTotalCurrency(order))}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-gray-700">
+                      {formatPaymentMethod(getPaymentMethod(order))}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className={`inline-flex whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 ${STATUS_COLORS[getOrderStatus(order)]}`}
+                      >
+                        {STATUS_LABELS[getOrderStatus(order)]}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-center text-gray-500">
+                      {formatDate(order.createdAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => openView(o)}
-                          className="px-2.5 py-1.5 text-xs bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                          onClick={() => setSelected(order)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100"
                         >
+                          <Eye size={14} />
                           Xem
-                        </button>
-                        <button
-                          onClick={() => openEdit(o)}
-                          className="px-2.5 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors"
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          onClick={() => openDelete(o)}
-                          className="px-2.5 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
-                        >
-                          Xóa
                         </button>
                       </div>
                     </td>
@@ -363,199 +369,44 @@ export default function OrdersPage() {
           </table>
         </div>
 
-        {/* Pagination */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-          <p className="text-sm text-gray-500">
-            Hiển thị {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
-            {Math.min(page * PAGE_SIZE, filtered.length)} / {filtered.length}{" "}
-            đơn hàng
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
-            >
-              ← Trước
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+        {!loading && filtered.length > 0 && (
+          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
+            <p className="text-sm text-gray-500">
+              Hiển thị {(page - 1) * PAGE_SIZE + 1}-
+              {Math.min(page * PAGE_SIZE, filtered.length)} / {filtered.length}
+            </p>
+            <div className="flex items-center gap-2">
               <button
-                key={p}
-                onClick={() => setPage(p)}
-                className={`w-8 h-8 text-sm rounded-lg transition-colors ${page === p ? "bg-indigo-600 text-white" : "border border-gray-200 hover:bg-gray-50"}`}
+                disabled={page === 1}
+                onClick={() => handlePageChange(page - 1)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm transition-colors hover:bg-gray-50 disabled:opacity-40"
               >
-                {p}
+                Trước
               </button>
-            ))}
-            <button
-              disabled={page === totalPages}
-              onClick={() => setPage(page + 1)}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
-            >
-              Sau →
-            </button>
+              {pageNumbers.map((item) => (
+                <button
+                  key={item}
+                  onClick={() => handlePageChange(item)}
+                  className={`h-8 w-8 rounded-lg text-sm transition-colors ${
+                    page === item
+                      ? "bg-indigo-600 text-white"
+                      : "border border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+              <button
+                disabled={page === totalPages}
+                onClick={() => handlePageChange(page + 1)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm transition-colors hover:bg-gray-50 disabled:opacity-40"
+              >
+                Sau
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-
-      {/* View Modal */}
-      {modalMode === "view" && selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-800">
-                Chi tiết đơn #{selected.id}
-              </h3>
-              <button
-                onClick={closeModal}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-3">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Khách hàng</p>
-                  <p className="font-medium text-gray-800">
-                    {selected.customer}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Email</p>
-                  <p className="font-medium text-gray-800">{selected.email}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-gray-400 text-xs mb-0.5">Sản phẩm</p>
-                  <p className="font-medium text-gray-800">
-                    {selected.product}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Số lượng</p>
-                  <p className="font-medium text-gray-800">
-                    {selected.items} sản phẩm
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Tổng tiền</p>
-                  <p className="font-semibold text-indigo-600">
-                    {formatPrice(selected.total)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Ngày đặt</p>
-                  <p className="font-medium text-gray-800">{selected.date}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs mb-1">Trạng thái</p>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[selected.status]}`}
-                  >
-                    {STATUS_LABELS[selected.status]}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
-              <button
-                onClick={closeModal}
-                className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Status Modal */}
-      {modalMode === "edit" && selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-800">
-                Cập nhật đơn #{selected.id}
-              </h3>
-              <button
-                onClick={closeModal}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Trạng thái đơn hàng
-              </label>
-              <select
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value as OrderStatus)}
-              >
-                {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-              <button
-                onClick={closeModal}
-                className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleSaveStatus}
-                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                Lưu
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Modal */}
-      {modalMode === "delete" && selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6 space-y-5">
-            <div className="text-center">
-              <div className="text-4xl mb-3">🗑️</div>
-              <h3 className="text-base font-semibold text-gray-800">
-                Xóa đơn hàng
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Bạn có chắc muốn xóa đơn{" "}
-                <span className="font-medium text-gray-800">
-                  #{selected.id}
-                </span>{" "}
-                của{" "}
-                <span className="font-medium text-gray-800">
-                  {selected.customer}
-                </span>
-                ?
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={closeModal}
-                className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleDelete}
-                className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Xóa
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

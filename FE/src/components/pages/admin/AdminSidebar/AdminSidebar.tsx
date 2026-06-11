@@ -33,11 +33,11 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", page: "dashboard" },
-  { icon: Package, label: "San pham", page: "products" },
-  { icon: ShoppingCart, label: "Don hang", page: "orders" },
-  { icon: Users, label: "Khach hang", page: "customers" },
-  { icon: Tag, label: "Khuyen mai", page: "promotions" },
-  { icon: Settings, label: "Cai dat", page: "settings" },
+  { icon: Package, label: "Sản phẩm", page: "products" },
+  { icon: ShoppingCart, label: "Đơn hàng", page: "orders" },
+  { icon: Users, label: "Khách hàng", page: "customers" },
+  { icon: Tag, label: "Khuyến mãi", page: "promotions" },
+  { icon: Settings, label: "Cài đặt", page: "settings" },
 ];
 
 type Props = {
@@ -61,8 +61,8 @@ export default function AdminSidebar({
     window.location.assign("http://localhost:3002/account/login");
   }
 
-  const displayName = user?.name || user?.email?.split("@")[0] || "Tai khoan";
-  const displayEmail = user?.email || "Chua co email";
+  const displayName = user?.name || user?.email?.split("@")[0] || "Tài khoản";
+  const displayEmail = user?.email || "Chưa có email";
   const userInitial = displayName.charAt(0).toUpperCase();
 
   return (
@@ -75,7 +75,7 @@ export default function AdminSidebar({
           <p className="text-lg font-bold tracking-tight text-white">
             AdminShop
           </p>
-          <p className="text-xs text-slate-400">Control center</p>
+          <p className="text-xs text-slate-400">Trung tâm điều khiển</p>
         </div>
       </div>
 
@@ -127,7 +127,7 @@ export default function AdminSidebar({
             </div>
             <button
               onClick={handleLogout}
-              title="Dang xuat"
+              title="Đăng xuất"
               className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
             >
               <LogOut size={18} />

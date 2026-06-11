@@ -1,58 +1,84 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Eye, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Pencil, Plus, Search, TicketPercent, Trash2 } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/hooks/hooks";
 import usePagination from "@/hooks/usePagination";
-import { getProducts } from "@/features/products/productsSlice";
-import { deleteProduct } from "@/services/products/productsService";
-import type { Product } from "@/services/products/productsService";
-import AddProductPage from "../AddProductPage/AddProductPage";
-import EditProductPage from "../EditProductPage/EditProductPage";
-import ViewProductPage from "../ViewProductPage/ViewProductPage";
+import { getVouchers } from "@/features/vouchers/vouchersSlice";
+import {
+  deleteVoucher,
+  type Voucher,
+  type VoucherStatus,
+  type VoucherType,
+} from "@/services/vouchers/vouchersService";
+import AddVoucherPage from "../AddVoucherPage/AddVoucherPage";
+import EditVoucherPage from "../EditVoucherPage/EditVoucherPage";
 
 const PAGE_SIZE = 10;
-type ViewMode = "list" | "add" | "edit" | "view";
 
-function formatPrice(amount: number, currency: string) {
-  if (currency === "VND" || currency === "VND") {
-    return "VND " + amount.toLocaleString("vi-VN");
-  }
-  return amount.toLocaleString("vi-VN") + " " + currency;
-}
+const TYPE_LABELS: Record<VoucherType, string> = {
+  percent: "Phần trăm",
+  fixed: "Cố định",
+};
 
-function formatDate(iso: string) {
+const STATUS_LABELS: Record<VoucherStatus, string> = {
+  active: "Hoạt động",
+  inactive: "Tạm tắt",
+};
+
+const STATUS_CLASSES: Record<VoucherStatus, string> = {
+  active: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  inactive: "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
+type ViewMode = "list" | "add" | "edit";
+
+function formatDate(iso?: string) {
+  if (!iso) return "-";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("vi-VN");
 }
 
-export default function ProductsPage() {
+function formatValue(voucher: Voucher) {
+  if (voucher.type === "percent") return `${voucher.value}%`;
+  return voucher.value.toLocaleString("vi-VN") + " VND";
+}
+
+export default function VouchersPage() {
   const dispatch = useAppDispatch();
-  const { products, loading, error } = useAppSelector(
-    (state) => state.products,
+  const { vouchers, loading, error } = useAppSelector(
+    (state) => state.vouchers,
   );
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [selected, setSelected] = useState<Product | null>(null);
+  const [selected, setSelected] = useState<Voucher | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    dispatch(getProducts({ limit: 100 }));
+    dispatch(getVouchers());
   }, [dispatch]);
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    if (!q) return products;
+    const q = search.trim().toLowerCase();
+    if (!q) return vouchers;
 
-    return products.filter(
-      (product) =>
-        product.title.toLowerCase().includes(q) ||
-        product.categories.some((category) =>
-          category.toLowerCase().includes(q),
-        ),
+    return vouchers.filter(
+      (voucher) =>
+        voucher.code.toLowerCase().includes(q) ||
+        voucher.label.toLowerCase().includes(q) ||
+        voucher.type.toLowerCase().includes(q) ||
+        voucher.status.toLowerCase().includes(q) ||
+        voucher.conditions.categoryKeywords.some((item) =>
+          item.toLowerCase().includes(q),
+        ) ||
+        voucher.conditions.titleKeywords.some((item) =>
+          item.toLowerCase().includes(q),
+        ) ||
+        voucher.productSourceUrls.some((item) => item.toLowerCase().includes(q)),
     );
-  }, [products, search]);
+  }, [search, vouchers]);
 
   const {
     page,
@@ -65,37 +91,35 @@ export default function ProductsPage() {
   function goList() {
     setViewMode("list");
     setSelected(null);
+    setActionError(null);
   }
 
-  function openView(product: Product) {
-    setSelected(product);
-    setViewMode("view");
-  }
-
-  function openEdit(product: Product) {
-    setSelected(product);
+  function openEdit(voucher: Voucher) {
+    setSelected(voucher);
     setViewMode("edit");
   }
 
-  async function handleDelete(product: Product) {
-    setDeletingId(product._id);
-    await dispatch(deleteProduct(product._id));
-    await dispatch(getProducts({ limit: 100 }));
-    setDeletingId(null);
+  async function handleDelete(voucher: Voucher) {
+    setDeletingId(voucher._id);
+    setActionError(null);
+    try {
+      await deleteVoucher(voucher._id);
+      await dispatch(getVouchers()).unwrap();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Không thể xóa voucher",
+      );
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   if (viewMode === "add") {
-    return <AddProductPage onBack={goList} />;
+    return <AddVoucherPage onBack={goList} />;
   }
 
   if (viewMode === "edit" && selected) {
-    return <EditProductPage product={selected} onBack={goList} />;
-  }
-
-  if (viewMode === "view" && selected) {
-    return (
-      <ViewProductPage product={selected} onBack={goList} onEdit={openEdit} />
-    );
+    return <EditVoucherPage voucher={selected} onBack={goList} />;
   }
 
   return (
@@ -108,7 +132,7 @@ export default function ProductsPage() {
           />
           <input
             className="w-72 rounded-lg border border-gray-200 py-2 pl-9 pr-4 text-sm outline-none transition focus:ring-2 focus:ring-indigo-300"
-            placeholder="Tìm tên sản phẩm, danh mục..."
+            placeholder="Tìm mã voucher, loại, trạng thái..."
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -119,28 +143,28 @@ export default function ProductsPage() {
 
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500">
-            Tổng: <strong>{filtered.length}</strong> sản phẩm
+            Tổng: <strong>{filtered.length}</strong> voucher
           </span>
           <button
             onClick={() => setViewMode("add")}
             className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
           >
             <Plus size={16} />
-            Thêm sản phẩm
+            Thêm voucher
           </button>
         </div>
       </div>
 
-      {error && (
+      {(error || actionError) && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
+          {actionError ?? error}
         </div>
       )}
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm animate-card-in delay-100">
         <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="text-base font-semibold text-gray-800">
-            Danh sách sản phẩm
+            Danh sách voucher
           </h2>
         </div>
 
@@ -148,11 +172,13 @@ export default function ProductsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 text-xs uppercase text-gray-500">
-                <th className="w-16 px-4 py-3 text-left">Ảnh</th>
-                <th className="px-4 py-3 text-left">Tên sản phẩm</th>
-                <th className="px-4 py-3 text-left">Danh mục</th>
-                <th className="px-4 py-3 text-right">Giá</th>
-                <th className="px-4 py-3 text-center">Ngày tạo</th>
+                <th className="px-4 py-3 text-left">Mã</th>
+                <th className="px-4 py-3 text-left">Loại</th>
+                <th className="px-4 py-3 text-right">Giá trị</th>
+                <th className="px-4 py-3 text-right">Đơn tối thiểu</th>
+                <th className="px-4 py-3 text-center">Lượt dùng</th>
+                <th className="px-4 py-3 text-center">Thời gian</th>
+                <th className="px-4 py-3 text-center">Trạng thái</th>
                 <th className="px-4 py-3 text-center">Thao tác</th>
               </tr>
             </thead>
@@ -160,7 +186,7 @@ export default function ProductsPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-gray-400"
                   >
                     <div className="flex items-center justify-center gap-2">
@@ -172,82 +198,72 @@ export default function ProductsPage() {
               ) : paginated.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-gray-400"
                   >
-                    Không tìm thấy sản phẩm nào
+                    Chưa có voucher nào
                   </td>
                 </tr>
               ) : (
-                paginated.map((product) => (
+                paginated.map((voucher) => (
                   <tr
-                    key={product._id}
+                    key={voucher._id}
                     className="transition-colors hover:bg-gray-50"
                   >
                     <td className="px-4 py-3">
-                      {product.imageUrls[0] ? (
-                        <img
-                          src={product.imageUrls[0]}
-                          alt={product.title}
-                          className="h-10 w-10 rounded-lg border border-gray-100 object-cover"
-                          onError={(event) => {
-                            (event.target as HTMLImageElement).style.display =
-                              "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-lg text-gray-300">
-                          #
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                          <TicketPercent size={18} />
+                        </span>
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            {voucher.code}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {voucher.label || `Tạo: ${formatDate(voucher.createdAt)}`}
+                          </p>
                         </div>
-                      )}
-                    </td>
-                    <td className="max-w-xs px-4 py-3 font-medium text-gray-800">
-                      <span className="line-clamp-2">{product.title}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      <div className="flex flex-wrap gap-1">
-                        {product.categories.slice(0, 2).map((category) => (
-                          <span
-                            key={category}
-                            className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600"
-                          >
-                            {category}
-                          </span>
-                        ))}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-gray-800">
-                      {formatPrice(
-                        product.price.amount,
-                        product.price.currency,
-                      )}
+                    <td className="px-4 py-3 text-gray-600">
+                      {TYPE_LABELS[voucher.type]}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-gray-900">
+                      {formatValue(voucher)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-gray-600">
+                      {(voucher.minOrderValue ?? 0).toLocaleString("vi-VN")} USD
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-center text-gray-600">
+                      {voucher.usedCount ?? 0}
+                      {voucher.usageLimit ? ` / ${voucher.usageLimit}` : ""}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-center text-gray-500">
-                      {formatDate(product.createdAt)}
+                      Hết hạn: {formatDate(voucher.endDate)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 ${STATUS_CLASSES[voucher.status]}`}
+                      >
+                        {STATUS_LABELS[voucher.status]}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => openView(product)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100"
-                        >
-                          <Eye size={14} />
-                          Xem
-                        </button>
-                        <button
-                          onClick={() => openEdit(product)}
+                          onClick={() => openEdit(voucher)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
                           <Pencil size={14} />
                           Sửa
                         </button>
                         <button
-                          onClick={() => handleDelete(product)}
-                          disabled={deletingId === product._id}
+                          onClick={() => handleDelete(voucher)}
+                          disabled={deletingId === voucher._id}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Trash2 size={14} />
-                          {deletingId === product._id ? "Đang xóa" : "Xóa"}
+                          {deletingId === voucher._id ? "Đang xóa" : "Xóa"}
                         </button>
                       </div>
                     </td>

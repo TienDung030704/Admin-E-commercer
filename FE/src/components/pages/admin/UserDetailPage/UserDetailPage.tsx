@@ -20,9 +20,9 @@ const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 const STATUS_LABELS: Record<UserStatus, string> = {
-  active: "Hoat dong",
+  active: "Hoạt động",
   banned: "Bi khoa",
-  inactive: "Khong hoat dong",
+  inactive: "Không hoạt động",
 };
 
 const STATUS_COLORS: Record<UserStatus, string> = {
@@ -48,15 +48,15 @@ export default function UserDetailPage({ user, onBack }: Props) {
         className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-950"
       >
         <ArrowLeft size={16} />
-        Quay lai danh sach
+        Quay lại danh sách
       </button>
 
       <div>
         <h1 className="text-2xl font-bold text-slate-950">
-          Chi tiet nguoi dung
+          Chi tiết người dùng
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Thong tin day du cua tai khoan.
+          Thông tin đầy đủ của tài khoản.
         </p>
       </div>
 
@@ -84,11 +84,11 @@ export default function UserDetailPage({ user, onBack }: Props) {
             <Info label="Email" value={user.email} icon={Mail} />
             <Info label="Phone" value={user.phone || "-"} icon={UserRound} />
             <Info
-              label="Ngay tao"
+              label="Ngày tạo"
               value={formatDate(user.createdAt)}
               icon={BadgeCheck}
             />
-            <Info label="Ma user" value={user._id} icon={Shield} />
+            <Info label="Mã user" value={user._id} icon={Shield} />
           </div>
         </div>
       </div>

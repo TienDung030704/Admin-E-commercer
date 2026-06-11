@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "@/hooks/hooks";
 import { getUsers } from "@/features/admin/adminUsersSlice";
+import { getOrders } from "@/features/orders/ordersSlice";
 import { getProducts } from "@/features/products/productsSlice";
+import type { Order } from "@/services/orders/ordersService";
 import {
   Activity,
   ArrowDownRight,
@@ -16,37 +18,160 @@ import {
   Wallet,
 } from "lucide-react";
 
-function formatPrice(amount: number, currency: string) {
-  if (currency === "VND" || currency === "VNĐ") {
-    return "₫" + amount.toLocaleString("vi-VN");
-  }
-  return amount.toLocaleString("vi-VN") + " " + currency;
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("vi-VN");
-}
-
-const chartPoints = [44, 34, 31, 48, 78, 64, 52, 58, 76];
-
-const recentOrders = [
-  { id: "#ORD-1001", name: "Nguyen Van An", price: "799.000đ", status: "Hoan thanh", tone: "green" },
-  { id: "#ORD-1002", name: "Tran Thi Bich Ngoc", price: "1.250.000đ", status: "Dang xu ly", tone: "blue" },
-  { id: "#ORD-1003", name: "Le Minh Hoang", price: "560.000đ", status: "Dang giao", tone: "amber" },
-  { id: "#ORD-1004", name: "Pham Quang Huy", price: "340.000đ", status: "Da huy", tone: "slate" },
-  { id: "#ORD-1005", name: "Hoang Thu Ha", price: "1.020.000đ", status: "Hoan thanh", tone: "green" },
-];
+const STATUS_LABELS = {
+  pending: "Cho xu ly",
+  shipping: "Dang giao",
+  delivered: "Da giao",
+  cancelled: "Da huy",
+} as const;
 
 const toneClass: Record<string, string> = {
   green: "bg-emerald-50 text-emerald-700",
-  blue: "bg-sky-50 text-sky-700",
   amber: "bg-amber-50 text-amber-700",
+  red: "bg-red-50 text-red-700",
   slate: "bg-slate-100 text-slate-500",
 };
+
+function formatPrice(amount: number, currency = "USD") {
+  if (!Number.isFinite(amount)) return `0 ${currency}`;
+  return amount.toLocaleString("vi-VN") + " " + currency;
+}
+
+function formatDate(iso?: string) {
+  if (!iso) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("vi-VN");
+}
+
+function toNumber(value: unknown, fallback: number | null = null) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  if (value && typeof value === "object" && "amount" in value) {
+    return toNumber(value.amount, fallback);
+  }
+
+  return fallback;
+}
+
+function getCurrency(value: unknown) {
+  if (value && typeof value === "object" && "currency" in value) {
+    return typeof value.currency === "string" ? value.currency : undefined;
+  }
+  return undefined;
+}
+
+function getOrderItems(order: Order) {
+  return order.items ?? order.products ?? [];
+}
+
+function getItemQuantity(item: ReturnType<typeof getOrderItems>[number]) {
+  return toNumber(item.quantity, 1) ?? 1;
+}
+
+function getItemPrice(item: ReturnType<typeof getOrderItems>[number]) {
+  return toNumber(item.price ?? item.unitPrice ?? item.amount ?? item.total ?? item.totalPrice) ?? 0;
+}
+
+function getOrderTotalValue(order: Order) {
+  return (
+    order.totalAmount ??
+    order.total ??
+    order.totalPrice ??
+    order.finalTotal ??
+    order.grandTotal ??
+    order.summary?.total ??
+    order.summary?.grandTotal ??
+    order.summary?.subtotal ??
+    order.pricing?.total ??
+    order.pricing?.grandTotal ??
+    order.pricing?.subtotal ??
+    order.subtotal
+  );
+}
+
+function getOrderTotal(order: Order) {
+  const explicitTotal = toNumber(getOrderTotalValue(order));
+  if (explicitTotal !== null) return explicitTotal;
+
+  return getOrderItems(order).reduce(
+    (sum, item) => sum + getItemPrice(item) * getItemQuantity(item),
+    0,
+  );
+}
+
+function getOrderCurrency(order: Order) {
+  return getCurrency(getOrderTotalValue(order)) ?? "USD";
+}
+
+function getOrderStatus(order: Order) {
+  if (order.status === "processing") return "pending";
+  if (order.status === "shipped") return "shipping";
+  return order.status ?? "pending";
+}
+
+function getOrderCode(order: Order) {
+  return order.orderCode ?? order.code ?? order.orderNumber ?? order._id ?? order.id ?? "";
+}
+
+function getCustomerName(order: Order) {
+  const email =
+    order.customerEmail ??
+    order.userEmail ??
+    order.customer?.email ??
+    order.user?.email ??
+    order.email ??
+    "";
+
+  return (
+    [
+      order.customerName,
+      order.userName,
+      order.customer?.name,
+      order.user?.name,
+      email.split("@")[0],
+    ].find(Boolean) || "Khach hang"
+  );
+}
+
+function buildRevenueBars(orders: Order[]) {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (6 - index));
+    return date;
+  });
+
+  const values = days.map((day) => {
+    const nextDay = new Date(day);
+    nextDay.setDate(day.getDate() + 1);
+
+    return orders
+      .filter((order) => {
+        if (!order.createdAt) return false;
+        const createdAt = new Date(order.createdAt);
+        return createdAt >= day && createdAt < nextDay;
+      })
+      .reduce((sum, order) => sum + getOrderTotal(order), 0);
+  });
+
+  const max = Math.max(...values, 1);
+  return values.map((value) => Math.max(8, Math.round((value / max) * 100)));
+}
 
 export default function DashboardOverview() {
   const dispatch = useAppDispatch();
   const { users, loading: usersLoading } = useAppSelector((s) => s.adminUsers);
+  const {
+    orders,
+    total: totalOrders,
+    loading: ordersLoading,
+  } = useAppSelector((s) => s.orders);
   const {
     products,
     total: totalProducts,
@@ -54,44 +179,66 @@ export default function DashboardOverview() {
   } = useAppSelector((s) => s.products);
 
   useEffect(() => {
-    if (users.length === 0) dispatch(getUsers());
-    if (products.length === 0) dispatch(getProducts({ limit: 100 }));
+    dispatch(getUsers());
+    dispatch(getOrders());
+    dispatch(getProducts({ limit: 100 }));
   }, [dispatch]);
 
-  const activeUsers = users.filter((u) => u.status === "active").length;
-  const recentProducts = [...products]
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-    .slice(0, 3);
+  const dashboardData = useMemo(() => {
+    const revenue = orders.reduce((sum, order) => sum + getOrderTotal(order), 0);
+    const currency = orders[0] ? getOrderCurrency(orders[0]) : "USD";
+    const deliveredOrders = orders.filter((order) => getOrderStatus(order) === "delivered").length;
+    const cancelledOrders = orders.filter((order) => getOrderStatus(order) === "cancelled").length;
+    const activeUsers = users.filter((user) => user.status === "active").length;
+    const averageOrder = orders.length > 0 ? revenue / orders.length : 0;
+    const recentOrders = [...orders]
+      .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+      .slice(0, 5);
+    const recentProducts = [...products]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 3);
+
+    return {
+      revenue,
+      currency,
+      deliveredOrders,
+      cancelledOrders,
+      activeUsers,
+      averageOrder,
+      recentOrders,
+      recentProducts,
+      chartPoints: buildRevenueBars(orders),
+    };
+  }, [orders, products, users]);
 
   const stats = [
     {
-      label: "Tổng doanh thu",
-      value: "24.560 USD",
-      change: "18.6%",
+      label: "Tong doanh thu",
+      value: ordersLoading
+        ? "..."
+        : formatPrice(dashboardData.revenue, dashboardData.currency),
+      change: `${orders.length} don`,
       icon: Wallet,
       color: "violet",
     },
     {
-      label: "Đơn hàng",
-      value: "128",
-      change: "12.4%",
+      label: "Don hang",
+      value: ordersLoading ? "..." : String(totalOrders || orders.length),
+      change: `${dashboardData.deliveredOrders} da giao`,
       icon: ShoppingCart,
       color: "emerald",
     },
     {
-      label: "Người dùng",
-      value: usersLoading ? "..." : String(users.length || 0),
-      change: activeUsers > 0 ? "8.7%" : "0.0%",
+      label: "Nguoi dung",
+      value: usersLoading ? "..." : String(users.length),
+      change: `${dashboardData.activeUsers} active`,
       icon: Users,
       color: "sky",
     },
     {
-      label: "Sản phẩm",
+      label: "San pham",
       value: productsLoading ? "..." : String(totalProducts || products.length),
-      change: "4.3%",
+      change: `${products.length} da tai`,
       icon: Package,
       color: "amber",
     },
@@ -111,23 +258,25 @@ export default function DashboardOverview() {
             <div>
               <h2 className="text-base font-bold text-slate-950">Doanh thu</h2>
               <div className="mt-3 flex items-end gap-3">
-                <p className="text-2xl font-bold text-slate-950">24.560 USD</p>
+                <p className="text-2xl font-bold text-slate-950">
+                  {formatPrice(dashboardData.revenue, dashboardData.currency)}
+                </p>
                 <p className="mb-1 flex items-center gap-1 text-sm font-medium text-emerald-600">
                   <ArrowUpRight size={15} />
-                  18.6% so với 7 ngày trước
+                  Tong tu {orders.length} don hang
                 </p>
               </div>
             </div>
-            <button className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
-              7 ngày qua
-            </button>
+            <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
+              Du lieu that
+            </span>
           </div>
           <div className="relative h-64 rounded-xl bg-gradient-to-b from-violet-50 to-white px-4 py-5">
             <div className="absolute inset-x-4 top-1/2 border-t border-dashed border-violet-200" />
             <div className="absolute inset-x-4 top-1/4 border-t border-dashed border-violet-100" />
             <div className="absolute inset-x-4 top-3/4 border-t border-dashed border-violet-100" />
             <div className="relative flex h-full items-end gap-3">
-              {chartPoints.map((point, index) => (
+              {dashboardData.chartPoints.map((point, index) => (
                 <div key={index} className="flex flex-1 items-end">
                   <div
                     className="w-full rounded-t-xl bg-gradient-to-t from-violet-500/70 to-violet-300/80 shadow-[0_8px_24px_rgba(124,58,237,0.18)] transition-all duration-500 hover:from-violet-600"
@@ -138,45 +287,58 @@ export default function DashboardOverview() {
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[
-              ["Hôm nay", "3.120 USD", "12.5%"],
-              ["Tuần này", "24.560 USD", "18.6%"],
-              ["Tháng này", "98.450 USD", "22.1%"],
-              ["Năm nay", "1.245.300 USD", "25.8%"],
-            ].map(([label, value, change]) => (
-              <div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="mt-2 text-sm font-bold text-slate-950">{value}</p>
-                <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                  <ArrowUpRight size={13} />
-                  {change}
-                </p>
-              </div>
-            ))}
+            <MiniStat label="Tong don" value={String(orders.length)} />
+            <MiniStat label="Da giao" value={String(dashboardData.deliveredOrders)} />
+            <MiniStat label="Da huy" value={String(dashboardData.cancelledOrders)} down />
+            <MiniStat
+              label="Gia tri TB"
+              value={formatPrice(dashboardData.averageOrder, dashboardData.currency)}
+            />
           </div>
         </section>
 
         <section className="dashboard-card overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <h2 className="text-base font-bold text-slate-950">Đơn hàng gần đây</h2>
-            <button className="text-sm font-semibold text-violet-600">Xem tất cả</button>
+            <h2 className="text-base font-bold text-slate-950">Don hang gan day</h2>
           </div>
           <div className="divide-y divide-slate-100">
-            {recentOrders.map((order) => (
-              <div key={order.id} className="flex items-center gap-4 px-6 py-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                  <ShoppingCart size={18} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-slate-950">{order.id}</p>
-                  <p className="truncate text-sm text-slate-500">{order.name}</p>
-                </div>
-                <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${toneClass[order.tone]}`}>
-                  {order.status}
-                </span>
-                <p className="w-24 text-right text-sm font-bold text-slate-900">{order.price}</p>
+            {dashboardData.recentOrders.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-slate-400">
+                Chua co don hang
               </div>
-            ))}
+            ) : (
+              dashboardData.recentOrders.map((order) => {
+                const status = getOrderStatus(order);
+                const tone =
+                  status === "delivered"
+                    ? "green"
+                    : status === "cancelled"
+                      ? "red"
+                      : status === "shipping"
+                        ? "amber"
+                        : "slate";
+
+                return (
+                  <div key={getOrderCode(order)} className="flex items-center gap-4 px-6 py-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                      <ShoppingCart size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-slate-950">
+                        #{getOrderCode(order)}
+                      </p>
+                      <p className="truncate text-sm text-slate-500">{getCustomerName(order)}</p>
+                    </div>
+                    <span className={`whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold ${toneClass[tone]}`}>
+                      {STATUS_LABELS[status]}
+                    </span>
+                    <p className="w-24 whitespace-nowrap text-right text-sm font-bold text-slate-900">
+                      {formatPrice(getOrderTotal(order), getOrderCurrency(order))}
+                    </p>
+                  </div>
+                );
+              })
+            )}
           </div>
         </section>
       </div>
@@ -184,19 +346,18 @@ export default function DashboardOverview() {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_1fr]">
         <section className="dashboard-card overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <h2 className="text-base font-bold text-slate-950">Sản phẩm bán chạy</h2>
-            <button className="text-sm font-semibold text-violet-600">Xem tất cả</button>
+            <h2 className="text-base font-bold text-slate-950">San pham moi nhat</h2>
           </div>
           <div className="divide-y divide-slate-100">
-            {recentProducts.length === 0 ? (
+            {dashboardData.recentProducts.length === 0 ? (
               <div className="px-6 py-12 text-center text-sm text-slate-400">
-                Chưa có sản phẩm
+                Chua co san pham
               </div>
             ) : (
-              recentProducts.map((product, index) => (
-                <div key={product._id} className="grid grid-cols-[48px_1fr_96px_112px] items-center gap-4 px-6 py-4">
+              dashboardData.recentProducts.map((product, index) => (
+                <div key={product._id} className="grid grid-cols-[48px_1fr_112px] items-center gap-4 px-6 py-4">
                   <p className="text-sm font-bold text-slate-400">#{index + 1}</p>
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     {product.imageUrls[0] ? (
                       <img
                         src={product.imageUrls[0]}
@@ -213,8 +374,7 @@ export default function DashboardOverview() {
                       <p className="text-xs text-slate-500">{formatDate(product.createdAt)}</p>
                     </div>
                   </div>
-                  <p className="text-sm font-semibold text-slate-700">128</p>
-                  <p className="text-right text-sm font-bold text-slate-900">
+                  <p className="whitespace-nowrap text-right text-sm font-bold text-slate-900">
                     {formatPrice(product.price.amount, product.price.currency)}
                   </p>
                 </div>
@@ -224,15 +384,36 @@ export default function DashboardOverview() {
         </section>
 
         <section className="dashboard-card p-6">
-          <h2 className="mb-4 text-base font-bold text-slate-950">Thống kê nhanh</h2>
+          <h2 className="mb-4 text-base font-bold text-slate-950">Thong ke nhanh</h2>
           <div className="space-y-1">
-            <QuickStat icon={BarChart3} label="Tỷ lệ chuyển đổi" value="2.45%" change="0.6%" up />
-            <QuickStat icon={ShoppingCart} label="Giá trị đơn hàng TB" value="865.000đ" change="9.3%" up />
-            <QuickStat icon={Eye} label="Tổng lượt truy cập" value="12.456" change="15.7%" up />
-            <QuickStat icon={Activity} label="Tỷ lệ thoát trang" value="32.6%" change="4.2%" />
+            <QuickStat icon={BarChart3} label="Don da giao" value={String(dashboardData.deliveredOrders)} change="real" up />
+            <QuickStat icon={ShoppingCart} label="Gia tri don TB" value={formatPrice(dashboardData.averageOrder, dashboardData.currency)} change="real" up />
+            <QuickStat icon={Eye} label="User active" value={String(dashboardData.activeUsers)} change="real" up />
+            <QuickStat icon={Activity} label="Don da huy" value={String(dashboardData.cancelledOrders)} change="real" />
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  down = false,
+}: {
+  label: string;
+  value: string;
+  down?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-2 truncate text-sm font-bold text-slate-950">{value}</p>
+      <p className={`mt-1 flex items-center gap-1 text-xs font-semibold ${down ? "text-red-500" : "text-emerald-600"}`}>
+        {down ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
+        Real data
+      </p>
     </div>
   );
 }
@@ -269,11 +450,10 @@ function StatCard({
         </div>
         <p className="font-semibold text-slate-800">{stat.label}</p>
       </div>
-      <p className="mt-5 text-3xl font-bold tracking-tight text-slate-950">{stat.value}</p>
+      <p className="mt-5 truncate text-3xl font-bold tracking-tight text-slate-950">{stat.value}</p>
       <p className="mt-2 flex items-center gap-1 text-sm text-slate-500">
         <ArrowUpRight size={15} className="text-emerald-600" />
         <span className="font-semibold text-emerald-600">{stat.change}</span>
-        so với tuần trước
       </p>
       <div className={`mt-4 h-14 rounded-xl bg-gradient-to-t ${colorMap[stat.color]} to-transparent opacity-80`} />
     </section>
@@ -299,7 +479,7 @@ function QuickStat({
         <Icon size={18} />
       </div>
       <p className="flex-1 text-sm text-slate-600">{label}</p>
-      <p className="text-sm font-bold text-slate-950">{value}</p>
+      <p className="whitespace-nowrap text-sm font-bold text-slate-950">{value}</p>
       <p className={`flex items-center gap-1 text-xs font-semibold ${up ? "text-emerald-600" : "text-red-500"}`}>
         {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
         {change}
