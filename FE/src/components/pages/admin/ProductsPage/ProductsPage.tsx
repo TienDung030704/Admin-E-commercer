@@ -12,9 +12,11 @@ import EditProductPage from "../EditProductPage/EditProductPage";
 import ViewProductPage from "../ViewProductPage/ViewProductPage";
 
 const PAGE_SIZE = 10;
+const PRODUCT_FETCH_LIMIT = 1000;
 type ViewMode = "list" | "add" | "edit" | "view";
 
-function formatPrice(amount: number, currency: string) {
+function formatPrice(amount?: number, currency = "USD") {
+  if (typeof amount !== "number" || Number.isNaN(amount)) return "-";
   if (currency === "VND" || currency === "VND") {
     return "VND " + amount.toLocaleString("vi-VN");
   }
@@ -29,7 +31,7 @@ function formatDate(iso: string) {
 
 export default function ProductsPage() {
   const dispatch = useAppDispatch();
-  const { products, loading, error } = useAppSelector(
+  const { products, total, loading, error } = useAppSelector(
     (state) => state.products,
   );
   const [search, setSearch] = useState("");
@@ -38,7 +40,7 @@ export default function ProductsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    dispatch(getProducts({ limit: 100 }));
+    dispatch(getProducts({ limit: PRODUCT_FETCH_LIMIT }));
   }, [dispatch]);
 
   const filtered = useMemo(() => {
@@ -47,8 +49,8 @@ export default function ProductsPage() {
 
     return products.filter(
       (product) =>
-        product.title.toLowerCase().includes(q) ||
-        product.categories.some((category) =>
+        (product.title ?? "").toLowerCase().includes(q) ||
+        (product.categories ?? []).some((category) =>
           category.toLowerCase().includes(q),
         ),
     );
@@ -80,7 +82,7 @@ export default function ProductsPage() {
   async function handleDelete(product: Product) {
     setDeletingId(product._id);
     await dispatch(deleteProduct(product._id));
-    await dispatch(getProducts({ limit: 100 }));
+    await dispatch(getProducts({ limit: PRODUCT_FETCH_LIMIT }));
     setDeletingId(null);
   }
 
@@ -119,7 +121,7 @@ export default function ProductsPage() {
 
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500">
-            Tổng: <strong>{filtered.length}</strong> sản phẩm
+            Tổng: <strong>{total}</strong> sản phẩm
           </span>
           <button
             onClick={() => setViewMode("add")}
@@ -185,7 +187,7 @@ export default function ProductsPage() {
                     className="transition-colors hover:bg-gray-50"
                   >
                     <td className="px-4 py-3">
-                      {product.imageUrls[0] ? (
+                      {product.imageUrls?.[0] ? (
                         <img
                           src={product.imageUrls[0]}
                           alt={product.title}
@@ -206,20 +208,22 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       <div className="flex flex-wrap gap-1">
-                        {product.categories.slice(0, 2).map((category) => (
-                          <span
-                            key={category}
-                            className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600"
-                          >
-                            {category}
-                          </span>
-                        ))}
+                        {(product.categories ?? [])
+                          .slice(0, 2)
+                          .map((category) => (
+                            <span
+                              key={category}
+                              className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600"
+                            >
+                              {category}
+                            </span>
+                          ))}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-gray-800">
                       {formatPrice(
-                        product.price.amount,
-                        product.price.currency,
+                        product.price?.amount,
+                        product.price?.currency,
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-center text-gray-500">

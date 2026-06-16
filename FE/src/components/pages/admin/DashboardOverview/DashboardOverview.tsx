@@ -6,6 +6,7 @@ import { getUsers } from "@/features/admin/adminUsersSlice";
 import { getOrders } from "@/features/orders/ordersSlice";
 import { getProducts } from "@/features/products/productsSlice";
 import type { Order } from "@/services/orders/ordersService";
+import type { Product } from "@/services/products/productsService";
 import {
   Activity,
   ArrowDownRight,
@@ -32,6 +33,8 @@ const toneClass: Record<string, string> = {
   slate: "bg-slate-100 text-slate-500",
 };
 
+const PRODUCT_FETCH_LIMIT = 1000;
+
 function formatPrice(amount: number, currency = "USD") {
   if (!Number.isFinite(amount)) return `0 ${currency}`;
   return amount.toLocaleString("vi-VN") + " " + currency;
@@ -42,6 +45,24 @@ function formatDate(iso?: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("vi-VN");
+}
+
+function getProductDate(product: Product) {
+  const rawDate = product.createdAt ?? product.updatedAt ?? product.scrapedAt;
+  const date = new Date(rawDate ?? 0);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function getProductImage(product: Product) {
+  return product.imageUrls?.[0] ?? "";
+}
+
+function getProductPrice(product: Product) {
+  return product.price?.amount ?? 0;
+}
+
+function getProductCurrency(product: Product) {
+  return product.price?.currency ?? "USD";
 }
 
 function toNumber(value: unknown, fallback: number | null = null) {
@@ -181,7 +202,7 @@ export default function DashboardOverview() {
   useEffect(() => {
     dispatch(getUsers());
     dispatch(getOrders());
-    dispatch(getProducts({ limit: 100 }));
+    dispatch(getProducts({ limit: PRODUCT_FETCH_LIMIT }));
   }, [dispatch]);
 
   const dashboardData = useMemo(() => {
@@ -195,7 +216,7 @@ export default function DashboardOverview() {
       .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
       .slice(0, 5);
     const recentProducts = [...products]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => getProductDate(b) - getProductDate(a))
       .slice(0, 3);
 
     return {
@@ -358,9 +379,9 @@ export default function DashboardOverview() {
                 <div key={product._id} className="grid grid-cols-[48px_1fr_112px] items-center gap-4 px-6 py-4">
                   <p className="text-sm font-bold text-slate-400">#{index + 1}</p>
                   <div className="flex min-w-0 items-center gap-3">
-                    {product.imageUrls[0] ? (
+                    {getProductImage(product) ? (
                       <img
-                        src={product.imageUrls[0]}
+                        src={getProductImage(product)}
                         alt={product.title}
                         className="h-11 w-11 rounded-xl object-cover"
                       />
@@ -371,11 +392,11 @@ export default function DashboardOverview() {
                     )}
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-950">{product.title}</p>
-                      <p className="text-xs text-slate-500">{formatDate(product.createdAt)}</p>
+                      <p className="text-xs text-slate-500">{formatDate(product.createdAt ?? product.updatedAt ?? product.scrapedAt)}</p>
                     </div>
                   </div>
                   <p className="whitespace-nowrap text-right text-sm font-bold text-slate-900">
-                    {formatPrice(product.price.amount, product.price.currency)}
+                    {formatPrice(getProductPrice(product), getProductCurrency(product))}
                   </p>
                 </div>
               ))
